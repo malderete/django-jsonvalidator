@@ -54,7 +54,14 @@ def test_for_post_form_view(request):
     return HttpResponse('OK')
 
 
-def on_error_callback(request):
+@json_validator(JSON_SCHEMA, get_from_form_field,
+                attach_to_request=True)
+def test_for_post_form_view_attach_to(request):
+    data = json.dumps(request.json_valid)
+    return HttpResponse(data, status=200, content_type='application/json')
+
+
+def on_error_callback(request, err):
     return HttpResponse("Invalid JSON", status=400)
 
 def on_invalid_callback(request, errors):
@@ -153,3 +160,10 @@ class JsonSchemaTests(TestCase):
         self.assertEquals(response.status_code, 400)
         self.assertEquals(response.content, "Invalid JSON")
 
+    def test_attach_to_request(self):
+        data = json.dumps(self.valid_data)
+        request = self.factory.post('/', dict(c_data=data))
+        response = test_for_post_form_view_attach_to(request)
+        response_json = json.loads(response.content)
+        self.assertEquals(response.status_code, 200)
+        self.assertEquals(isinstance(response_json, dict), True)

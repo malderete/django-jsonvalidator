@@ -23,14 +23,19 @@ class JSONValidator(object):
     @on_invalid_callback: A callable object to
     call if the json provided does not match the
     given schema.
+    @attach_to_request: Flag to indicate if the deserialized JSON
+    should be attached to the request.REQUEST_ATTR (default: 'json_valid')
+    to avoid and extra json.loads call. (DEFAULT: False)
     """
     DEFAULT_CALLBACKS = {
-        'on_error': lambda request, errors: HttpResponse('Error', status=400),
+        'on_error': lambda request, error: HttpResponse('Error', status=400),
         'on_invalid': lambda request, errors: HttpResponse('Fail', status=400)
     }
+    REQUEST_ATTR = 'json_valid'
 
     def __init__(self, schema, get_data_callable, load_json=True,
-        on_error_callback=None, on_invalid_callback=None):
+        on_error_callback=None, on_invalid_callback=None,
+        attach_to_request=False):
 
         self.schema = schema
         self.get_data_callable = get_data_callable
@@ -41,6 +46,7 @@ class JSONValidator(object):
             on_invalid_callback = JSONValidator.DEFAULT_CALLBACKS['on_invalid']
         self.on_error = on_error_callback
         self.on_invalid = on_invalid_callback
+        self.attach_to_request = attach_to_request
 
     def __call__(self, view):
         functools.wraps(view)
@@ -49,9 +55,9 @@ class JSONValidator(object):
                 data = self.get_data_callable(request)
                 if self.load_json:
                     data = json.loads(data)
-            except Exception:
-                logger.debug("on_error: %s", view.__name__)
-                return self.on_error(request)
+            except Exception as err:
+                logger.debug("on_error %s: %s", view.__name__, err)
+                return self.on_error(request, err)
             # JSON version 4
             validator = jsonschema.Draft4Validator(self.schema)
             # validate data
@@ -59,6 +65,9 @@ class JSONValidator(object):
             if errors:
                 logger.debug("on_invalid: %s", view.__name__)
                 return self.on_invalid(request, errors)
+
+            if self.attach_to_request:
+                setattr(request, JSONValidator.REQUEST_ATTR, data)
             return view(request, *args, **kwargs)
 
         return wrapper
